@@ -1,0 +1,270 @@
+================================================================================
+                                    DIVVY
+                           Everyone gets their cut.
+             Decentralized Payment Splitter on BOT Network (Chain ID: 968)
+================================================================================
+
+PITCH DECK | NOVEMBER 2026
+
+--------------------------------------------------------------------------------
+SLIDE 1: COVER & EXECUTIVE SUMMARY
+--------------------------------------------------------------------------------
+Project Name     : Divvy
+Tagline          : Everyone gets their cut.
+Network          : BOT Testnet (Chain ID: 968)
+RPC Endpoint     : https://rpc.bohr.life
+Block Explorer   : https://scan.bohr.life
+Native Currency  : BOT (18 decimals)
+Contract Address : 0x4b76926f74117429eb4869f875Cf402BE05997C1
+Verification URL : https://scan.bohr.life/address/0x4b76926f74117429eb4869f875Cf402BE05997C1
+
+EXECUTIVE SUMMARY:
+Divvy is an immutable, trustless payment splitter for native BOT on the BOT
+blockchain ecosystem. Built with Solidity ^0.8.24 and OpenZeppelin 5.x security
+primitives, Divvy solves group revenue sharing and shared expenses by automating
+the distribution of native crypto with mathematical precision.
+
+Anyone can instantiate a split by choosing a name (1–50 bytes) and listing 2 to 20
+member wallet addresses with basis point percentages summing to exactly 10,000 (100%).
+Once deployed, the split is permanent and unalterable. Payer entities—clients, ticket
+buyers, roommates, or automated smart contracts—simply send BOT to the split.
+Each member can withdraw their exact proportional cut whenever they choose, with
+zero counterparty risk and zero administrative overhead.
+
+Key Highlights:
+- 100% Serverless: No backend, no database, no custodian.
+- Zero Protocol Fees: 100% of received BOT goes directly to group members.
+- Pull-Payment Security: Independent member withdrawals prevent griefing and DoS.
+- Zero-Loss Dust Integrity: Contract balance strictly equals totalReceived minus totalReleased.
+- 25 Passing Foundry Tests: 100% test pass rate including fuzz and stateful invariant suites.
+
+--------------------------------------------------------------------------------
+SLIDE 2: THE PROBLEM - GROUP PAYMENT FRICTION IN WEB3
+--------------------------------------------------------------------------------
+Sharing revenue or splitting expenses among teams and collaborative groups remains
+one of the most error-prone and contentious interactions in crypto:
+
+1. Manual Accounting & "Chasing Down Money":
+   - Freelance teams, bands, roommates, and hackathon squads frequently designate
+     one person to receive payment and manually distribute shares.
+   - Leads to human accounting errors, transaction fee disputes, and social awkwardness.
+
+2. Custodial & Centralized Spreadsheets:
+   - Off-chain spreadsheets and centralized tools require high trust in a single
+     treasurer who could disappear, lose access, or misuse group funds.
+
+3. Multi-Sig Complexity for Simple Splits:
+   - Setting up a multi-signature safe requires coordinated signing for every routine
+     payment, creating high gas overhead and operational bottlenecks for recurring revenue.
+
+4. Push-Payment Failures (Smart Contract Denial of Service):
+   - Traditional payment splitter contracts loop through all recipients in a single push.
+   - If one recipient wallet rejects BOT (e.g. smart contract without a fallback),
+     the entire payout transaction reverts, freezing everyone's money.
+
+--------------------------------------------------------------------------------
+SLIDE 3: THE SOLUTION - DIVVY PROTOCOL
+--------------------------------------------------------------------------------
+Divvy introduces a frictionless, trustless protocol for group payouts:
+
+1. Create in Seconds:
+   - Define a split name, add 2 to 20 wallet addresses, and set percentage allocations.
+   - Integrated "⚡ Split Equally" algorithm auto-fills equal shares and handles
+     fractional basis point remainder on row 1 for an exact 100.00% sum.
+
+2. Decentralized Native Inflow:
+   - Anyone can send native BOT to `pay(id)` at any time in any increment.
+   - Funds accumulate safely inside the contract's verified balance.
+
+3. Asynchronous Pull Withdrawals:
+   - Members withdraw their share whenever they want via `withdraw(id)`.
+   - Each member's entitlement is calculated dynamically:
+     `owed = (totalReceived * bps) / 10_000 - alreadyReleased`.
+   - Each withdrawal is an isolated transaction. A malicious or broken contract
+     only breaks its own withdrawal and can never block anyone else.
+
+4. Trust-Minimized & Permanent:
+   - No owner, no admin keys, no pause button, and no upgrade proxies.
+   - Splits cannot be tampered with or modified after creation.
+
+--------------------------------------------------------------------------------
+SLIDE 4: ARCHITECTURE & SYSTEM DESIGN
+--------------------------------------------------------------------------------
+Divvy follows modern clean-architecture principles across contract and frontend:
+
+A. SMART CONTRACT (contracts/src/Divvy.sol):
+   - OpenZeppelin ReentrancyGuard: nonReentrant modifiers on `pay` and `withdraw`.
+   - Checks-Effects-Interactions (CEI): released state updated prior to low-level transfer.
+   - Basis Point Storage: uint16 basis points (1 bp = 0.01%, 10,000 bps = 100.00%).
+   - Direct Transfer Protection: No receive() or fallback(), preventing accidental loss.
+   - Pure Custom Errors: 12 descriptive errors replacing verbose revert strings.
+
+B. DATA MODEL:
+   - struct Split {
+       address creator;
+       string name;
+       uint256 totalReceived;
+       uint64 createdAt;
+     }
+   - mapping(uint256 => Split) private _splits;
+   - mapping(uint256 => address[]) private _splitMembers;
+   - mapping(uint256 => mapping(address => uint16)) private _bps;
+   - mapping(uint256 => mapping(address => uint256)) private _released;
+   - mapping(address => uint256[]) private _splitIdsByMember;
+
+C. DAPP FRONTEND (frontend/):
+   - Vite + React 18 + TypeScript + Viem.
+   - Client-side hash routing:
+     * Home View (`#/`): Create split, auto-balancer, live total indicator, My Splits.
+     * Split View (`#/split/<id>`): Stat cards, member table, payment box, 1-click withdraw.
+   - Automatic RPC polling every 4 seconds for instant on-chain synchronization.
+
+--------------------------------------------------------------------------------
+SLIDE 5: MATHEMATICAL PRECISION & DUST INTEGRITY
+--------------------------------------------------------------------------------
+Integer division in Solidity (`/ 10_000`) naturally truncates fractional wei:
+
+1. Rounding Philosophy:
+   - To prevent over-disbursing contract funds, each calculation rounds down:
+     `entitled = (totalReceived * bps) / 10_000`.
+   - Rounding down guarantees total payouts across all members NEVER exceed totalReceived.
+
+2. Dust Bound Guarantee:
+   - The residual wei left in the contract is mathematically proven to be strictly
+     less than the number of members in the split:
+     `dust < memberCount` (where memberCount <= 20).
+   - For example, with 3 members splitting 7 wei unevenly (33.33%, 33.33%, 33.34%),
+     dust left behind is 1 wei.
+
+3. Stateful Invariant Verification:
+   - Contract balance strictly matches:
+     `address(divvy).balance == sum(split.totalReceived) - sum(all released)`.
+   - Proved with 640 randomized handler calls across multiple actors without deviation.
+
+--------------------------------------------------------------------------------
+SLIDE 6: SECURITY & FOUNDRY VERIFICATION
+--------------------------------------------------------------------------------
+The Divvy smart contract was tested using Foundry's test framework:
+
+Test Suite Breakdown (25/25 Passing):
+- CreateSplit Validation:
+  [PASS] Empty name rejection (0 bytes)
+  [PASS] Over-length name rejection (> 50 bytes)
+  [PASS] Member count bounds (< 2 and > 20 members)
+  [PASS] Array length mismatch detection
+  [PASS] Zero address rejection (address(0))
+  [PASS] Duplicate member detection
+  [PASS] Zero basis points rejection
+  [PASS] Non-10,000 bps sum rejection (9,999 and 10,001)
+  [PASS] Accurate metadata storage & event emissions
+
+- Inflow & Outflow Accounting:
+  [PASS] Zero-value payment rejection
+  [PASS] Nonexistent split ID rejection
+  [PASS] Multi-round separate payments tracking
+  [PASS] Partial and repeat withdrawals with exact proportionality
+  [PASS] Awkward amounts handling (1 wei, 7 wei, 1,000,000,007 wei)
+  [PASS] Non-member withdrawal rejection
+  [PASS] Zero-claimable withdrawal rejection
+  [PASS] Direct native ether transfer rejection
+
+- Advanced Attack & Invariant Testing:
+  [PASS] Malicious reentrancy attack completely thwarted (ReentrancyGuardReentrantCall)
+  [PASS] Rejecting recipient contract isolated without impacting honest members
+  [PASS] Fuzz test (256 randomized runs) proving zero BOT creation or destruction
+  [PASS] Invariant test: Contract balance strictly equals totalReceived - totalReleased
+
+--------------------------------------------------------------------------------
+SLIDE 7: USER EXPERIENCE & PRODUCT SHOWCASE
+--------------------------------------------------------------------------------
+Divvy combines decentralized finance with modern UX:
+
+1. Clean, Friendly Interface:
+   - Fresh dark-theme UI with mint green (#10b981) and warm yellow (#f59e0b) accents.
+   - Responsive layouts optimized for desktop, tablet, and mobile.
+
+2. Effortless Split Creation:
+   - Real-time address validation with duplicate warnings.
+   - "⚡ Split equally" button solves division math instantly.
+   - Live color-coded total indicator (green at 100.00%, red otherwise).
+
+3. Transparent Member Dashboard:
+   - Connect wallet to instantly view all splits where your address is listed.
+   - Highlights your percentage cut, historical withdrawn BOT, and live claimable balance.
+   - 1-click "Withdraw" button with real-time feedback and BohrScan explorer links.
+
+4. Shareable Split Links:
+   - One-click copy link (`#/split/<id>`) to share with clients, roommates, or sponsors.
+   - "Send BOT" interface with preset chips (+0.1, +0.5, +1.0, +5.0 BOT).
+
+--------------------------------------------------------------------------------
+SLIDE 8: REAL-WORLD TARGET USE CASES
+--------------------------------------------------------------------------------
+Divvy serves a broad spectrum of real-world Web3 collaborations:
+
+1. Hackathon & Builder Squads:
+   - Co-builders split prize money and grant payouts automatically without arguing over shares.
+   - The split address can be submitted directly as the prize recipient wallet.
+
+2. Creative Collectives & Music Bands:
+   - Bands, NFT artist collaborations, and podcast teams distribute ticket sales,
+     royalties, and streaming tips according to agreed-upon percentages.
+
+3. Roommates & Shared Living:
+   - Shared rent, internet, and utility bill pools where flatmates deposit BOT and
+     vendors or roommates pull their respective shares.
+
+4. DAO Sub-Committees & Working Groups:
+   - Specialized contributor teams receive native grants and automatically disperse
+     compensation to members without waiting on monthly multi-sig approvals.
+
+5. Onchain Revenue Sharing for Games & Dapps:
+   - Smart contracts, game engines, and NFT marketplaces can route fee shares directly
+     into Divvy splits.
+
+--------------------------------------------------------------------------------
+SLIDE 9: ECOSYSTEM ROADMAP & FUTURE VISION
+--------------------------------------------------------------------------------
+Divvy's phased roadmap expands upon its foundational testnet release:
+
+PHASE 1 (Completed):
+- Core Divvy contract developed with Solidity ^0.8.24 and OpenZeppelin 5.x.
+- 100% test pass rate with fuzz and invariant verification.
+- Deployed live to BOT Testnet (Chain ID 968) at 0x4b76926f74117429eb4869f875Cf402BE05997C1.
+- Responsive Vite + React + TypeScript + Viem frontend launched.
+
+PHASE 2 (Mainnet Readiness):
+- Formal smart contract audit & gas micro-optimizations.
+- BOT Mainnet deployment and ecosystem integration.
+- Split cloning and template presets (e.g. 50/50, 4-way, custom ratios).
+
+PHASE 3 (Protocol Expansion):
+- Divvy ERC-20: Optional payment splitting for wrapped tokens and stablecoins.
+- Automated Split Forwarding: Routing contract-to-contract split streams.
+- Mobile Web3 SDK & Widget Embed: Drop-in "Pay with Divvy" checkout buttons.
+
+--------------------------------------------------------------------------------
+SLIDE 10: APPENDIX & CONTRACT METRICS
+--------------------------------------------------------------------------------
+Network Configuration:
+- Chain ID           : 968
+- Network Name       : BOT Testnet
+- RPC URL            : https://rpc.bohr.life
+- Native Token       : BOT (18 decimals)
+- Block Explorer     : https://scan.bohr.life
+
+Contract Artifacts:
+- Core Contract      : Divvy.sol
+- Contract Address   : 0x4b76926f74117429eb4869f875Cf402BE05997C1
+- Compiler Version   : Solc 0.8.24
+- Optimizer Runs     : 200
+- OpenZeppelin Ver   : 5.0.2
+
+Security Verification Summary:
+- Total Tests        : 25 passing (0 failures)
+- Invariant Runs     : 32 runs, 640 calls, 0 reverts
+- Reentrancy Guard   : Enabled on all state-mutating entrypoints
+- Access Control     : None (Permissionless & Trustless)
+
+"Everyone gets their cut."
+================================================================================
